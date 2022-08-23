@@ -6,6 +6,7 @@ namespace leantime\domain\controllers {
     use leantime\domain\repositories;
     use leantime\domain\services;
     use leantime\domain\models;
+    use leantime\domain\models\auth\roles;
 
     class tickets
     {
@@ -49,37 +50,36 @@ namespace leantime\domain\controllers {
          */
         public function post($params)
         {
+            if(services\auth::userIsAtLeast(roles::$editor)) {
+                if (isset($params['action']) && $params['action'] == "kanbanSort" && isset($params["payload"]) === true) {
+                    $handler = null;
+                    if (isset($params["handler"]) == true) {
+                        $handler = $params["handler"];
+                    }
+                    $results = $this->ticketsApiService->updateTicketStatusAndSorting($params["payload"], $handler);
 
-            if(isset($params['action']) && $params['action'] == "kanbanSort" && isset($params["payload"]) === true) {
+                    if ($results === true) {
+                        echo "{status:ok}";
+                    } else {
+                        echo "{status:failure}";
+                    }
 
-                $handler = null;
-                if (isset($params["handler"]) == true) {
-                    $handler = $params["handler"];
-                }
-                $results = $this->ticketsApiService->updateTicketStatusAndSorting($params["payload"], $handler);
+                }elseif(isset($params['action']) && $params['action'] == "new") {
+                    $results = $this->ticketsApiService->addTicket($params);
 
-                if ($results === true) {
-                    echo "{status:ok}";
-                } else {
-                    echo "{status:failure}";
-                }
+                    if ($results === true) {
+                        $this->tpl->displayJson("{status:ok}");
+                    } else {
+                        $this->tpl->displayJson("{status:failure}");
+                    }
 
-            }elseif(isset($params['action']) && $params['action'] == "new"){
-
-                $results = $this->ticketsApiService->addTicket($params);
-
-                if($results === true) {
-                    $this->tpl->displayJson("{status:ok}");
-                }else{
+                }else {
                     $this->tpl->displayJson("{status:failure}");
                 }
-
-            }else{
-
-                echo "{status:failure}";
-
+                
+            }else {
+                $this->tpl->displayJson("{status:failure}");
             }
-
         }
 
         /**
@@ -90,11 +90,17 @@ namespace leantime\domain\controllers {
          */
         public function patch($params)
         {
-            $results = $this->ticketsApiService->patchTicket($params['id'], $params);
+            if (services\auth::userIsAtLeast(roles::$editor)) {
 
-            if($results === true) {
-                echo "{status:ok}";
-            }else{
+                $results = $this->ticketsApiService->patchTicket($params['id'], $params);
+
+                if ($results === true) {
+                    echo "{status:ok}";
+                } else {
+                    echo "{status:failure}";
+                }
+
+            }else {
                 echo "{status:failure}";
             }
         }

@@ -77,7 +77,9 @@ class session
         session_name("sid");
         session_id(self::$sid);
         session_start();
+
         setcookie("sid", self::$sid, time()+$config->sessionExpiration, "/");
+
 
     }
 
@@ -107,6 +109,14 @@ class session
      */
     public static function getSID()
     {
+
+        if (self::$instance === null) {
+
+            self::$instance = new self();
+            return self::$instance::$sid;
+
+        }
+
 
         return self::$sid;
 
@@ -170,7 +180,15 @@ class session
         return null;
     }
 
-}
+    public static function destroySession() {
 
-/* @var string */
-$singlesession = session::getInstance();
+
+        if(isset($_COOKIE['sid'])){
+            unset($_COOKIE['sid']);
+        }
+
+        setcookie('sid', null, -1, '/');
+
+    }
+
+}

@@ -17,24 +17,35 @@ class application
     private $settingsRepo;
     private $reportService;
 
+    private $publicActions = array(
+        "auth.login",
+        "auth.resetPw",
+        "install",
+        "install.update",
+        "general.error404",
+        "api.i18n"
+    );
 
-    public function __construct(config $config,
-                                appSettings $settings,
-                                login $login,
-                                frontcontroller $frontController,
-                                language $language,
-                                services\projects $projectService,
-                                repositories\setting $settingRepo)
+
+    public function __construct()
     {
 
-        $this->config = $config;
-        $this->settings = $settings;
-        $this->login = $login;
-        $this->frontController = $frontController;
-        $this->language = $language;
-        $this->projectService = $projectService;
-        $this->settingsRepo = $settingRepo;
+        //Set Session
+        $session = session::getInstance();
+        $this->auth = services\auth::getInstance($session->getSID());
+
+        $this->config = new config();
+        $this->settings = new appSettings();
+
+        $this->frontController = frontcontroller::getInstance(ROOT);
+        $this->language = new language();
+        $this->projectService = new services\projects();
+        $this->settingsRepo = new repositories\setting();
         $this->reportService = new services\reports();
+
+
+
+
 
     }
 
@@ -46,61 +57,57 @@ class application
      */
     public function start()
     {
-
-        $config = $this->config; // Used in template
-        $settings = $this->settings; //Used in templates to show app version
-        $login = $this->login;
-        $frontController = $this->frontController;
-        $language = $this->language;
+        //Only run telemetry when logged in
         $telemetryResponse = false;
-
-        //Override theme settings
-        $this->overrideThemeSettings();
 
         $this->loadHeaders();
 
-        ob_start();
+        //Check if Leantime is installed
+        $this->checkIfInstalled();
 
-        if($this->login->logged_in()===false) {
+        //Allow a limited set of actions to be public
+        if($this->auth->logged_in()===true) {
 
-            //Run password reset through application to avoid security holes in the front controller
-            if(isset($_GET['act']) && $_GET['act'] == 'api.i18n') {
-                $frontController->run();
-            }elseif(isset($_GET['resetPassword']) === true) {
-                require ROOT.'/../src/resetPassword.php';
-            }elseif(isset($_GET['install']) === true) {
-                require ROOT.'/../src/install.php';
-            }elseif(isset($_GET['update']) === true) {
-                require ROOT.'/../src/update.php';
-            }else{
-                require ROOT.'/../src/login.php';
-            }
-
-
-        }else{
-
-            // Check if trying to access twoFA code page, or if trying to access any other action without verifying the code.
-            if(isset($_GET['twoFA']) === true) {
-                if($_SESSION['userdata']['twoFAVerified'] != true) {
-                    require ROOT.'/../src/twoFA.php';
-                }
-            }elseif($_SESSION['userdata']['twoFAEnabled'] && $_SESSION['userdata']['twoFAVerified'] === false){
-               $login->redirect2FA($_SERVER['REQUEST_URI']);
-            }
+            //Run Cron
+            $this->cronExec();
 
             //Send telemetry if user is opt in and if it hasn't been sent that day
             $telemetryResponse = $this->reportService->sendAnonymousTelemetry();
 
-            //Set current/default project
-            $this->projectService->setCurrentProject();
+            // Check if trying to access twoFA code page, or if trying to access any other action without verifying the code.
+            if($_SESSION['userdata']['twoFAEnabled'] && $_SESSION['userdata']['twoFAVerified'] === false){
 
-            //Run frontcontroller
-            $frontController->run();
+                if($this->frontController::getCurrentRoute() !== "twoFA.verify"
+                    && $this->frontController::getCurrentRoute() !== "auth.logout"
+                    && $this->frontController::getCurrentRoute() !== "api.i18n") {
+                    $this->frontController::redirect(BASE_URL."/twoFA/verify");
+                }
+
+            }else{
+
+                //House keeping when logged in.
+                //Set current/default project
+                $this->projectService->setCurrentProject();
+
+            }
+
+
+
+        }else{
+
+
+            if(!in_array(frontController::getCurrentRoute(), $this->publicActions)) {
+
+                if ($this->frontController::getCurrentRoute() !== "auth.login") {
+                    $this->frontController::redirect(BASE_URL . "/auth/login");
+                }
+
+            }
+
         }
 
-        $toRender = ob_get_clean();
-
-        echo $toRender;
+        //Dispatch controller
+        $this->frontController::dispatch();
 
         //Wait for telemetry if it was sent
         if($telemetryResponse !== false){
@@ -119,104 +126,81 @@ class application
             
     }
 
-    public function loadHeaders() {
+    private function loadHeaders() {
+
         header('X-Frame-Options: SAMEORIGIN');
         header('X-XSS-Protection: 1; mode=block');
         header('X-Content-Type-Options: nosniff');
+
     }
 
-    public function overrideThemeSettings() {
+    private function cronExec() {
 
-        if(isset($_SESSION["companysettings.logoPath"]) === false) {
+        $audit = new \leantime\domain\repositories\audit();
 
-            $logoPath = $this->settingsRepo->getSetting("companysettings.logoPath");
+        if(!isset($_SESSION['last_cron_call'])) {
 
-            if ($logoPath !== false) {
+            $lastEvent = $audit->getLastEvent('cron');
 
-                if (strpos($logoPath, 'http') === 0) {
-                    $_SESSION["companysettings.logoPath"] =  $logoPath;
-                }else{
-                    $_SESSION["companysettings.logoPath"] =  BASE_URL.$logoPath;
-                }
-
+            if(isset($lastEvent['date'])) {
+                $lastCronEvent = strtotime($lastEvent['date']);
             }else{
-
-                if (strpos($this->config->logoPath, 'http') === 0) {
-                    $_SESSION["companysettings.logoPath"] = $this->config->logoPath;
-                }else{
-                    $_SESSION["companysettings.logoPath"] = BASE_URL.$this->config->logoPath;
-                }
-
-            }
-        }
-
-
-        if(isset($_SESSION["companysettings.primarycolor"]) === false) {
-
-            $_SESSION["companysettings.primarycolor"] = "#1b75bb";
-            $_SESSION["companysettings.secondarycolor"] = "#81B1A8";
-
-            //Old setting
-            $mainColor = $this->settingsRepo->getSetting("companysettings.mainColor");
-            if ($mainColor !== false) {
-                $_SESSION["companysettings.primarycolor"] = "#".$mainColor;
-                $_SESSION["companysettings.secondarycolor"] = "#".$mainColor;
-            }
-
-            //new setting
-            $primaryColor = $this->settingsRepo->getSetting("companysettings.primarycolor");
-            if ($primaryColor !== false) {
-                $_SESSION["companysettings.primarycolor"] = $primaryColor;
-                $_SESSION["companysettings.secondarycolor"] = $primaryColor;
-            }
-
-            $secondaryColor = $this->settingsRepo->getSetting("companysettings.secondarycolor");
-            if ($secondaryColor !== false) {
-                $_SESSION["companysettings.secondarycolor"] = $secondaryColor;
+                $lastCronEvent = 0;
             }
 
         }else{
-            if(!str_starts_with($_SESSION["companysettings.primarycolor"], "#")){
-                $_SESSION["companysettings.primarycolor"] = "#".$_SESSION["companysettings.primarycolor"];
-                $_SESSION["companysettings.secondarycolor"] = "#".$_SESSION["companysettings.primarycolor"];
-            }
+            $lastCronEvent = $_SESSION['last_cron_call'];
         }
 
-        if(isset($_SESSION["companysettings.sitename"]) === false) {
-            $sitename = $this->settingsRepo->getSetting("companysettings.sitename");
-            if ($sitename !== false) {
-                $_SESSION["companysettings.sitename"] = $sitename;
-            }else{
-                $_SESSION["companysettings.sitename"] = $this->config->sitename;
-            }
+        // Using audit system to prevent too frequent cron executions
+        $nowDate = time();
+        $timeSince = abs($nowDate - $lastCronEvent);
+
+        //Run every 5 min
+        if ($timeSince >= 300)
+        {
+            $_SESSION["do_cron"] = true;
+            $_SESSION['last_cron_call'] = time();
+
+        } else {
+            unset ($_SESSION["do_cron"]);
         }
 
-        if(isset($_SESSION["companysettings.language"]) === false || $_SESSION["companysettings.language"] == false) {
-            $language = $this->settingsRepo->getSetting("companysettings.language");
-            if ($language !== false) {
-                $_SESSION["companysettings.language"] = $language;
-            }else{
-                $_SESSION["companysettings.language"] = $this->config->language;
-            }
-        }
 
-        //Only run this if the user is not logged in (db should be updated/installed before user login)
-        if($this->login->logged_in()===false) {
+    }
 
-            if($this->settingsRepo->checkIfInstalled() === false && isset($_GET['install']) === false){
-                if(!isset($_GET['act']) || $_GET['act'] != 'api.i18n') {
-                    header("Location:" . BASE_URL . "/install");
-                    exit();
+    private function checkIfInstalled() {
+
+        if(!isset($_SESSION['isInstalled']) || $_SESSION['isInstalled'] === false) {
+            if ($this->settingsRepo->checkIfInstalled() === false && isset($_GET['install']) === false) {
+
+                //Don't redirect on i18n call
+                if($this->frontController::getCurrentRoute() !== "install" &&
+                    $this->frontController::getCurrentRoute() !== "api.i18n") {
+                    $this->frontController::redirect(BASE_URL . "/install");
                 }
+
+            }else{
+                $_SESSION['isInstalled'] = true;
             }
+        }
+
+
+        if(isset($_SESSION['isInstalled']) && $_SESSION['isInstalled'] === true) {
 
             $dbVersion = $this->settingsRepo->getSetting("db-version");
             if ($this->settings->dbVersion != $dbVersion && isset($_GET['update']) === false && isset($_GET['install']) === false) {
-                if(!isset($_GET['act']) || $_GET['act'] != 'api.i18n') {
-                    header("Location:".BASE_URL."/update");
-                    exit();
-                }
+
+                //Don't redirect on i18n call
+                    if($this->frontController::getCurrentRoute() !== "install.update" &&
+                        $this->frontController::getCurrentRoute() !== "api.i18n"){
+
+                        $this->frontController::redirect(BASE_URL . "/install/update");
+                    }
+
+
             }
         }
+
     }
 }
