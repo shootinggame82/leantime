@@ -77,7 +77,14 @@ namespace leantime\domain\controllers {
                         core\frontcontroller::redirect(BASE_URL."/auth/twoFA");
                     }
 
-                   core\frontcontroller::redirect($redirectUrl);
+                    if(isset($_POST['api']) === true) {
+
+                        $this->tpl->displayJson('{token:' . $this->session . '}');
+
+                    }else{
+                        core\frontcontroller::redirect($redirectUrl);
+                    }
+
 
                 }else{
                     $this->tpl->setNotification("notifications.username_or_password_incorrect", "error");
