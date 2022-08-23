@@ -46,6 +46,7 @@ namespace leantime\domain\controllers {
          */
         public function get($params)
         {
+
             $redirectUrl = BASE_URL."/dashboard/show";
 
             if(isset($_SESSION['redirectOrigin'])){
@@ -64,9 +65,16 @@ namespace leantime\domain\controllers {
          */
         public function post($params)
         {
+
+
             if (isset($_POST['username'])===true && isset($_POST['password'])===true) {
 
-                $redirectUrl = urldecode(filter_var($_POST['redirectUrl'], FILTER_SANITIZE_URL));
+                if(isset($_POST['redirectUrl'])) {
+                    $redirectUrl = urldecode(filter_var($_POST['redirectUrl'], FILTER_SANITIZE_URL));
+                }else{
+                    $redirectUrl = "";
+                }
+
                 $username = filter_var($_POST['username'], FILTER_SANITIZE_EMAIL);
                 $password = $_POST['password'];
 
@@ -77,9 +85,9 @@ namespace leantime\domain\controllers {
                         core\frontcontroller::redirect(BASE_URL."/auth/twoFA");
                     }
 
-                    if(isset($_POST['api']) === true) {
+                    if(isset($_POST['api']) == true) {
 
-                        $this->tpl->displayJson('{token:' . $this->session . '}');
+                        $this->tpl->displayJson('{token:' . core\session::getSID() . '}');
 
                     }else{
                         core\frontcontroller::redirect($redirectUrl);

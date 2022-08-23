@@ -39,7 +39,12 @@ namespace leantime\domain\controllers {
          */
         public function get($params)
         {
+            if(services\auth::userIsAtLeast(roles::$editor)) {
+                $ticket = $this->ticketsApiService->getTicket($params['id']);
 
+                $this->tpl->displayJson(json_encode($ticket));
+
+            }
         }
 
         /**

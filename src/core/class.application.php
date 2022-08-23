@@ -43,10 +43,6 @@ class application
         $this->settingsRepo = new repositories\setting();
         $this->reportService = new services\reports();
 
-
-
-
-
     }
 
     /**
@@ -94,6 +90,7 @@ class application
 
 
         }else{
+
 
 
             if(!in_array(frontController::getCurrentRoute(), $this->publicActions)) {

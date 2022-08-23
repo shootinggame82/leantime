@@ -45,14 +45,14 @@ class session
         //Get sid from cookie
         $testSession = false;
 
-        if(isset($_COOKIE['sid']) === true) {
-
-            self::$sid=htmlspecialchars($_COOKIE['sid']);
-            $testSession = explode('-', self::$sid);
-
-        }else if($this->getBearerToken() === true) {
+        if($this->getBearerToken() == true) {
 
             self::$sid=htmlspecialchars($this->getBearerToken());
+            $testSession = explode('-', self::$sid);
+
+        }else if(isset($_COOKIE['sid']) === true) {
+
+            self::$sid=htmlspecialchars($_COOKIE['sid']);
             $testSession = explode('-', self::$sid);
 
         }
@@ -145,10 +145,16 @@ class session
     {
         $headers = null;
         if (isset($_SERVER['Authorization'])) {
+
             $headers = trim($_SERVER["Authorization"]);
+
         } else {
+
             if (isset($_SERVER['HTTP_AUTHORIZATION'])) { //Nginx or fast CGI
                 $headers = trim($_SERVER["HTTP_AUTHORIZATION"]);
+            }else if (isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) { //Nginx or fast CGI
+                    $headers = trim($_SERVER["REDIRECT_HTTP_AUTHORIZATION"]);
+
             } elseif (function_exists('apache_request_headers')) {
                 $requestHeaders = apache_request_headers();
                 // Server-side fix for bug in old Android versions (a nice side-effect of this fix means we don't care about capitalization for Authorization)
